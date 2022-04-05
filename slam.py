@@ -63,8 +63,8 @@ def main():
     # POSE BEFORE : LAST NODE'S POSE ( nodes[-1][0] )  #
     # POSE NOW    : CURRENT POSE     ( posedata[i]  )  #
     ####################################################
-        poseDiff =  ???#Calculate pose diff in 4x4 matrix
-        distDiff =  ???#Calculate euclidean distance between two node (using posediff)
+        poseDiff =  np.matmul(np.linalg.inv(nodes[-1][0]), posedata[i]) #Calculate pose diff in 4x4 matrix
+        distDiff =  np.linalg.norm(poseDiff[:3][3], 2) #Calculate euclidean distance between two node (using posediff)
         yawDiff  = R.from_dcm(poseDiff[0:3,0:3]).as_euler('zyx')[0] # Robot is in 2D in this lab, so just use Yaw angle
         # If enough distance(0.1[m]) or angle(30[deg]) difference, create node
         if (distDiff > 0.1 or abs(yawDiff)/3.141592*180 > 30):
@@ -90,12 +90,12 @@ def main():
     optimizer = PoseGraphOptimization();
     
     #Add first node as a fixed vertex. (True = fixed, False = non-fixed)
-    optimizer.add_vertex(???, g2o.Isometry3d(???),True)
+    optimizer.add_vertex(0, g2o.Isometry3d(np.identity(4)), True)
     
     for i in range(1,len(nodes)):
-        optimizer.add_vertex(???)
-        optimizer.add_edge([???,???],g2o.Isometry3d(???),
-                           information=???)
+        optimizer.add_vertex(i, g2o.Isometry3d(nodes[i][0]), False)
+        optimizer.add_edge([i-1,i],g2o.Isometry3d(nodes[i][2]),
+                           information=np.identity(6))
 
     #############################################################################
     #                                                                           #
@@ -153,7 +153,7 @@ def main():
 
         #PROCESS POINT CLOUD!
         srcPoint = srcLiDAR
-        dstPoint = ?
+        dstPoint = np.matmul(np.matmul(np.linalg.inv(srcRT),dstRT),dstLiDAR)
 
         #DON'T HAVE TO CHANGE MATCHING FUNCTION
         T, distances, iterations = icp.icp(dstPoint[0:2].T,srcPoint[0:2].T,
@@ -170,9 +170,9 @@ def main():
         #plt.scatter(dstTrans[0], dstTrans[1], c='r', marker='o',s=0.2)
 		#plt.show()
 		
-        if(?):	# ADD CONDITION OF MATCHING SUCCESS (ex: mean of distances less then 0.05 [m])
-            optimizer.add_edge([???,???], g2o.Isometry3d(???),
-                           information=???)
+        if(np.mean(distances)<0.05):	# ADD CONDITION OF MATCHING SUCCESS (ex: mean of distances less then 0.05 [m])
+            optimizer.add_edge([src,dst], g2o.Isometry3d(T),
+                           information=np.identity(6))
             optimizer.optimize()
 
 
