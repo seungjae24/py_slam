@@ -68,18 +68,9 @@ def main():
         distDiff =  np.linalg.norm(np.transpose(poseDiff)[3][:3], 2) #Calculate euclidean distance between two node (using posediff)
         yawDiff  = R.from_dcm(poseDiff[0:3,0:3]).as_euler('zyx')[0] # Robot is in 2D in this lab, so just use Yaw angle
         # If enough distance(0.1[m]) or angle(30[deg]) difference, create node
-        
-        # print("Node: ", nodes[-1][0])
-        # print("Pose: ", posedata[i])
-        # print("Result: ", np.matmul(nodes[-1][0], poseDiff))
-        # print("PoseDiff: ", poseDiff)
-        # print("DistDiff: ", distDiff)
-        # print("YawDiff: ", yawDiff)
-        # input("Enter...")
-        
+                
         if (distDiff > 0.1 or abs(yawDiff)/3.141592*180 > 30):
             nodes.append([posedata[i],lidardata[i],poseDiff])
-            # print(len(nodes))
 
 
     #############################################################################
@@ -193,9 +184,7 @@ def main():
             dyaw = abs(R.from_dcm(np.matmul(np.linalg.inv(pose_src.R), pose_dst.R)).as_euler('zyx')[0])
             dyaw = min(2*math.pi-dyaw, dyaw)
 
-            if r < search_radius and dyaw < search_yaw_diff :
-
-                # print(dyaw)
+            if r < search_radius :#and dyaw < search_yaw_diff :
 
                 matchingPair.append([src, dst])
 
