@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import csv
 import g2o
@@ -110,18 +111,18 @@ def main():
         yDiff = abs(poseDiff[1][3])
         yawDiff  = abs(R.from_dcm(poseDiff[0:3,0:3]).as_euler('zyx')[0])
 
-        cov_matrix = [[1/xDiff, 0, 0, 0, 0, 0],
-                      [0, 1/yDiff, 0, 0, 0, 0],
-                      [0, 0, 1, 0, 0, 0],
-                      [0, 0, 0, 1, 0, 0],
-                      [0, 0, 0, 0, 1, 0],
-                      [0, 0, 0, 0, 0, 1/yawDiff]]
+        info_matrix = [[1/xDiff, 0, 0, 0, 0, 0],
+                       [0, 1/yDiff, 0, 0, 0, 0],
+                       [0, 0, 1, 0, 0, 0],
+                       [0, 0, 0, 1, 0, 0],
+                       [0, 0, 0, 0, 1, 0],
+                       [0, 0, 0, 0, 0, 1/yawDiff]]
 
-        print("x, y, yaw diff: ", xDiff, yDiff, yawDiff)
+        # print("x, y, yaw diff: ", xDiff, yDiff, yawDiff)
         
         optimizer.add_vertex(i, g2o.Isometry3d(nodes[i][0]), False)
         optimizer.add_edge([i-1,i],g2o.Isometry3d(nodes[i][2]),
-                           information=cov_matrix)
+                           information=info_matrix)
         
 
     #############################################################################
@@ -147,7 +148,7 @@ def main():
     print("Original Poses...")
     plt.show()
 
-    optimizer.save_g2o('beforeSLAM.g2o')
+    # optimizer.save_g2o('beforeSLAM.g2o')
     
     #############################################################################
     # ASSIGNMENTS 3 : FIND LOOP CLOSURE                                         #
@@ -158,18 +159,6 @@ def main():
     #############################################################################  
 
     # matchingPair = [[src0,dst0],[src1,dst2]...]
-    matchingPair = []
-
-    for src in range(len(nodes)-10):
-        for dst in range (src+10, len(nodes)):
-            pose_src = optimizer.get_pose(src)
-            pose_dst = optimizer.get_pose(dst)
-            r = np.linalg.norm(pose_src.t - pose_dst.t)
-            if r<1 :
-                matchingPair.append([src, dst])
-    
-    print(len(matchingPair), "/", len(nodes)*(len(nodes)-1)/2, "pairs will be checked!")
-    print(matchingPair)
 
     #####################################################################################
     # ASSIGNMENTS 4 : MATCHING PAIRS, OPTIMIZE!                                         #
@@ -181,56 +170,80 @@ def main():
     #											                                        #
     # Apply initial translation to dst point cloud! if not, icp will inaccurate         #
     #											                                        #
-    #####################################################################################         
+    #####################################################################################    
+
+    matchingPair = []
+    optimizingPair = []
+
+    search_radius = 1
+    search_yaw_diff = 20*math.pi/180
+
+    #for src in range(len(nodes)-10):
+    #    for dst in range (src+10, len(nodes)):
+    for src in range(len(nodes)):
+        for dst in range (len(nodes)):
+
+            if abs(src-dst)<10: continue
+            if [min(src, dst), max(src, dst)] in optimizingPair: continue
+
+            pose_src = optimizer.get_pose(src)
+            pose_dst = optimizer.get_pose(dst)
+            r = np.linalg.norm(pose_src.t - pose_dst.t)
             
-    optimizingPair = []        
-    count = 0
-    for src,dst in matchingPair:
-        srcLiDAR = nodes[src][1][0:4]
-        dstLiDAR = nodes[dst][1][0:4]
-	    #GET SOURCE NODE POSITION (FROM VERTEX). srcRT = 4x4 matrix
-        rt = optimizer.get_pose(src)
-        srcRT = np.insert(rt.R, 3, rt.t, axis=1)
-        srcRT = np.insert(srcRT, 3, [0, 0, 0, 1], axis=0)
-	    #GET DESTINATION NODE POSITION (FROM VERTEX). dstRT = 4x4 matrix
-        rt = optimizer.get_pose(dst)
-        dstRT = np.insert(rt.R, 3, rt.t, axis=1)
-        dstRT = np.insert(dstRT, 3, [0, 0, 0, 1], axis=0)
+            dyaw = abs(R.from_dcm(np.matmul(np.linalg.inv(pose_src.R), pose_dst.R)).as_euler('zyx')[0])
+            dyaw = min(2*math.pi-dyaw, dyaw)
 
-        #PROCESS POINT CLOUD!
-        srcPoint = srcLiDAR
-        dstPoint = np.matmul(np.matmul(np.linalg.inv(srcRT),dstRT),dstLiDAR)
+            if r < search_radius and dyaw < search_yaw_diff :
 
-        #DON'T HAVE TO CHANGE MATCHING FUNCTION
-        T, distances, _ = icp.icp(dstPoint[0:2].T,srcPoint[0:2].T,
-                                               tolerance=0.000001,max_iterations=100)
-        #### MAKE 3x3 matrix into 4x4 matrix ####
-        T = np.insert(T, 2, [0, 0, 0], axis=1)
-        T = np.insert(T, 2, [0, 0, 1, 0], axis=0)
+                # print(dyaw)
 
-		#DRAWING FUNCTION FOR CHECKING ICP DONE WELL : Source blue, Dest green, Dest after ICP red
-		
-        # dstTrans = np.dot(T, dstPoint)
-        
-        if np.mean(distances)<0.05:	# ADD CONDITION OF MATCHING SUCCESS (ex: mean of distances less then 0.05 [m])
-            optimizer.add_edge([src,dst], g2o.Isometry3d(np.matmul(T, np.matmul(np.linalg.inv(srcRT), dstRT))),
-                           information=np.identity(6)/np.mean(distances))
-            optimizer.optimize()
+                matchingPair.append([src, dst])
 
-            # plt2 = plt
-            # plt2.scatter(dstPoint[0], dstPoint[1], c='g', marker='o',s=0.2)
-            # plt2.scatter(srcPoint[0], srcPoint[1], c='b', marker='o',s=0.2)
-            # plt2.scatter(dstTrans[0], dstTrans[1], c='r', marker='o',s=0.2)
+                srcLiDAR = nodes[src][1][0:4]
+                dstLiDAR = nodes[dst][1][0:4]
+                #GET SOURCE NODE POSITION (FROM VERTEX). srcRT = 4x4 matrix
+                rt = optimizer.get_pose(src)
+                srcRT = np.insert(rt.R, 3, rt.t, axis=1)
+                srcRT = np.insert(srcRT, 3, [0, 0, 0, 1], axis=0)
+                #GET DESTINATION NODE POSITION (FROM VERTEX). dstRT = 4x4 matrix
+                rt = optimizer.get_pose(dst)
+                dstRT = np.insert(rt.R, 3, rt.t, axis=1)
+                dstRT = np.insert(dstRT, 3, [0, 0, 0, 1], axis=0)
 
-            # plt2.show()
-            print("Nodes: ", src, ",", dst, "are matched with", np.mean(distances))
-            count = count + 1
-            optimizingPair.append([src, dst])
+                #PROCESS POINT CLOUD!
+                srcPoint = srcLiDAR
+                dstPoint = np.matmul(np.matmul(np.linalg.inv(srcRT),dstRT),dstLiDAR)
 
-    print(count, "pairs are aligned")
+                #DON'T HAVE TO CHANGE MATCHING FUNCTION
+                T, distances, _ = icp.icp(dstPoint[0:2].T,srcPoint[0:2].T,
+                                                    tolerance=0.000001,max_iterations=100)
+                #### MAKE 3x3 matrix into 4x4 matrix ####
+                T = np.insert(T, 2, [0, 0, 0], axis=1)
+                T = np.insert(T, 2, [0, 0, 1, 0], axis=0)
 
+                #DRAWING FUNCTION FOR CHECKING ICP DONE WELL : Source blue, Dest green, Dest after ICP red
+                
+                # dstTrans = np.dot(T, dstPoint)
+                # yawChange = abs(R.from_dcm(T[0:3,0:3]).as_euler('zyx')[0])
+                
+                if np.mean(distances)<0.05:	# ADD CONDITION OF MATCHING SUCCESS (ex: mean of distances less then 0.05 [m])
+                    optimizer.add_edge([src,dst], g2o.Isometry3d(np.matmul(T, np.matmul(np.linalg.inv(srcRT), dstRT))),
+                                information=np.identity(6)/np.mean(distances))
+                    optimizer.optimize()
 
+                    # plt2 = plt
+                    # plt2.scatter(dstPoint[0], dstPoint[1], c='g', marker='o',s=0.2)
+                    # plt2.scatter(srcPoint[0], srcPoint[1], c='b', marker='o',s=0.2)
+                    # plt2.scatter(dstTrans[0], dstTrans[1], c='r', marker='o',s=0.2)
 
+                    # plt2.show()
+                    print("Nodes: ", src, ",", dst, "are matched with", np.mean(distances))
+                    optimizingPair.append([src, dst])
+    
+    print(len(matchingPair), "/", np.int_(len(nodes)*(len(nodes)-1)/2), "pairs are checked!")
+    print(len(optimizingPair), "/", len(matchingPair), "pairs are matched!")
+    
+    
 
     #############################################################################
     #                                                                           #
@@ -269,13 +282,13 @@ def main():
         T_j = np.insert(T_j, 3, [0, 0, 0, 1], axis=0)
         x_j = T_j[0][3]
         y_j = T_j[1][3]
-        print("Node", i, "and", j, "are positioned at", [x_i, x_j], [y_i, y_j])
+        # print("Node", i, "and", j, "are positioned at", [x_i, x_j], [y_i, y_j])
         plt.plot([x_i, x_j], [y_i, y_j], 'g')
 
     print("Optimized Poses...")
     plt.show()
 
-    optimizer.save_g2o('afterSLAM.g2o')
+    # optimizer.save_g2o('afterSLAM.g2o')
 
 
 
