@@ -36,7 +36,7 @@ def main():
         for row in readcsv:
             x = []
             y = []
-            pointNum = np.int_((len(row)-1) / 2)
+            pointNum = np.int_(len(row) / 2)
             for i in range(pointNum):
                 x.append(float(row[2 * i])+0.30)
                 y.append(row[2 * i + 1])
@@ -212,7 +212,7 @@ def main():
 
                 #DRAWING FUNCTION FOR CHECKING ICP DONE WELL : Source blue, Dest green, Dest after ICP red
                 
-                # dstTrans = np.dot(T, dstPoint)
+                dstTrans = np.dot(T, dstPoint)
                 # yawChange = abs(R.from_dcm(T[0:3,0:3]).as_euler('zyx')[0])
                 
                 if np.mean(distances)<0.05:	# ADD CONDITION OF MATCHING SUCCESS (ex: mean of distances less then 0.05 [m])
@@ -228,6 +228,13 @@ def main():
                     # plt2.show()
                     print("Nodes: ", src, ",", dst, "are matched with", np.mean(distances))
                     optimizingPair.append([src, dst])
+                # else:
+                #     plt2 = plt
+                #     plt2.scatter(dstPoint[0], dstPoint[1], c='g', marker='o',s=0.2)
+                #     plt2.scatter(srcPoint[0], srcPoint[1], c='b', marker='o',s=0.2)
+                #     plt2.scatter(dstTrans[0], dstTrans[1], c='r', marker='o',s=0.2)
+
+                #     plt2.show()
     
     print(len(matchingPair), "/", np.int_(len(nodes)*(len(nodes)-1)/2), "pairs are checked!")
     print(len(optimizingPair), "/", len(matchingPair), "pairs are matched!")
